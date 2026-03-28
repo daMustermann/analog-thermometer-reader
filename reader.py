@@ -14,10 +14,12 @@ Features:
 - Stores cropped images with automatic history cleanup
 """
 
-import os, math, time, json, collections
+import os, sys, math, time, json, collections
 import cv2, numpy as np
 import paho.mqtt.publish as mqtt_publish
 import requests, urllib3
+
+sys.stdout = sys.stderr = open(sys.stdout.fileno(), mode="w", buffering=1)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
