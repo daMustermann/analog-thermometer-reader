@@ -174,7 +174,27 @@ python reader.py
 
 ## Troubleshooting
 
-**No circle detected:**
+### Viewing Logs
+
+**In Portainer:**
+1. Go to your stack → **Containers**
+2. Click on the container name
+3. Click **Logs** tab
+4. Enable **Show timestamps** and **Tail mode**
+
+**Via command line:**
+```bash
+docker logs heizung-reader
+docker logs -f heizung-reader  # follow mode
+```
+
+### No logs appearing
+
+If no logs appear, the container might be running but not producing output yet. Check:
+- Container status should show "Running"
+- Wait a few seconds (first capture happens every 5 minutes)
+
+### No circle detected:
 - Check ROI coordinates are correct
 - Adjust `GAUGE_ROTATION` to make the gauge more circular
 
