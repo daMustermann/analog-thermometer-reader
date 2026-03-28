@@ -124,12 +124,15 @@ def get_frame():
     except Exception as e:
         raise RuntimeError(f"HTTP request failed: {e}")
 
+    content_preview = r.content[:200]
     if len(r.content) < 100:
+        print(f"Response content: {content_preview}")
         raise RuntimeError(f"Empty response ({len(r.content)} bytes)")
 
     data = np.frombuffer(r.content, dtype=np.uint8)
     frame = cv2.imdecode(data, cv2.IMREAD_COLOR)
     if frame is None:
+        print(f"Response start: {content_preview}")
         raise RuntimeError(f"Failed to decode snapshot (got {len(r.content)} bytes)")
 
     return frame
