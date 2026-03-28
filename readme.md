@@ -12,18 +12,21 @@ This project uses Python and OpenCV to read temperature values from an analog th
 
 ## Portainer Stack
 
-In Portainer:
+### Option A: Git Repository
+Siehe oben (Repository Build).
+
+### Option B: Upload (ohne Git)
 1. **Stacks** → **Add stack**
-2. **Build method**: Repository
-   - Repository URL: `https://github.com/dein-repo/heizung`
-   - Build context: `.`
-3. **Environment variables** (im "Env" Tab):
-   - `SNAPSHOT_URL`: your camera URL
-   - `MQTT_HOST`: 192.168.1.180
-   - MQTT_PORT: 1883
-   - MQTT_USER: mqtt
-   - MQTT_PASSWORD: mqtt
+2. **Build method**: Upload
+3. **Upload**: `docker-compose.yml` und `.env` auswählen
 4. **Deploy stack**
+
+**Wichtig:** Bei Upload muss das Image zuerst gebaut werden:
+```bash
+docker build -t heizung-reader .
+```
+
+Dann in Portainer als "Custom" template deployen oder `image: heizung-reader` statt `build: .` in compose verwenden.
 
 ## Docker (Recommended)
 
