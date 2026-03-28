@@ -3,7 +3,7 @@ services:
     build: .
     container_name: heizung-reader
     volumes:
-      - ./captures:/app/captures
+      - captures:/app/captures
     environment:
       - SNAPSHOT_URL=${SNAPSHOT_URL}
       - MQTT_HOST=${MQTT_HOST}
@@ -11,3 +11,6 @@ services:
       - MQTT_USER=${MQTT_USER}
       - MQTT_PASSWORD=${MQTT_PASSWORD}
     restart: unless-stopped
+
+volumes:
+  captures:
