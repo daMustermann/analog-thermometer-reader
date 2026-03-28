@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """
-thermometer_reader_snapshot.py (Updated)
+Analog Thermometer Reader
 
-Liest den Wert deines analogen Thermometers (0–120 °C) über einen
-HTTPS-Snapshot der Reolink 810A.
+Reads temperature values from an analog thermometer captured by any IP camera.
+Supports any camera that provides an HTTP/HTTPS snapshot endpoint.
 
-Updates:
-- Interval changed to 5 minutes (300s).
-- Saves only the ROI (cropped) to save disk space.
-- Maintains a maximum of 100 images in history, deleting the oldest.
+Features:
+- Works with any camera (Reolink, Axis, generic IP cameras)
+- Automatic gauge circle detection using Hough Transform
+- Radial needle angle detection
+- Configurable temperature range and angle mapping
+- Publishes to Home Assistant via MQTT
+- Stores cropped images with automatic history cleanup
 """
 
 import os, math, time, json, collections
@@ -27,21 +30,22 @@ SNAPSHOT_URL = os.getenv(
     "https://192.168.1.199/cgi-bin/api.cgi?cmd=Snap&channel=0.rs=abc123&user=admin&password=Gitarre123&width=1920&height=1080",
 )
 
-# ROI im 1920x1080-Referenzbild (y1, y2, x1, x2)
+# ROI: Region of Interest in your camera frame (y1, y2, x1, x2)
+# See README for finding the correct coordinates
 ROI_REFERENCE_SIZE = (1920, 1080)
 ROI = (687, 829, 941, 1083)
 
-# Normalisierung des Thermometer-Bilds
-GAUGE_ROTATION = -23.0  # Grad, um das Thermometer gerade zu stellen
-NORMALIZED_SIZE = 400  # px × px für das normalisierte Bild
+# Gauge normalization
+GAUGE_ROTATION = -23.0  # degrees to straighten the gauge
+NORMALIZED_SIZE = 400  # px × px for normalized image
 
-# Skala: 0–120 °C über 240° Winkelbereich
+# Temperature scale: maps angle to temperature
 TEMP_MIN = 0.0
 TEMP_MAX = 120.0
 ANGLE_AT_MIN = -120.0
 ANGLE_AT_MAX = 120.0
 
-# Zeiger-Erkennung / Glättung
+# Needle detection / smoothing
 ANGLE_SEARCH_MIN = -130.0
 ANGLE_SEARCH_MAX = 130.0
 ANGLE_STEP_DEG = 1.0
@@ -61,7 +65,7 @@ MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "mqtt")
 MQTT_TOPIC = "homeassistant/sensor/heizung_thermo/state"
 MQTT_CFG = "homeassistant/sensor/heizung_thermo/config"
 
-# Bilder speichern
+# Image storage
 SAVE_DIR = "captures"
 SAVE_LATEST = "latest.jpg"
 SAVE_NORM = "latest_normalized.jpg"
@@ -69,7 +73,7 @@ SAVE_HISTORY = True
 HISTORY_DIR = "captures/history"
 MAX_HISTORY_FILES = 100
 
-INTERVAL = 300  # 5 Minuten (in Sekunden)
+INTERVAL = 300  # seconds between captures
 
 # ═══════════════════════════════════════════════════════════════════
 
@@ -90,7 +94,7 @@ def scale_roi(frame_shape):
 
 
 def cleanup_history():
-    """Löscht die ältesten Dateien, wenn mehr als MAX_HISTORY_FILES vorhanden sind."""
+    """Delete oldest files when exceeding MAX_HISTORY_FILES."""
     if not SAVE_HISTORY:
         return
 
@@ -102,7 +106,7 @@ def cleanup_history():
     if len(files) <= MAX_HISTORY_FILES:
         return
 
-    # Sortieren nach Erstellungszeit (älteste zuerst)
+    # Sort by creation time (oldest first)
     files.sort(key=os.path.getctime)
 
     to_delete = len(files) - MAX_HISTORY_FILES
@@ -110,7 +114,7 @@ def cleanup_history():
         try:
             os.remove(files[i])
         except Exception as e:
-            print(f"Fehler beim Löschen von {files[i]}: {e}")
+            print(f"Error deleting {files[i]}: {e}")
 
 
 def get_frame():
@@ -119,7 +123,7 @@ def get_frame():
     data = np.frombuffer(r.content, dtype=np.uint8)
     frame = cv2.imdecode(data, cv2.IMREAD_COLOR)
     if frame is None:
-        raise RuntimeError("Snapshot konnte nicht decodiert werden")
+        raise RuntimeError("Failed to decode snapshot")
     return frame
 
 
@@ -136,7 +140,7 @@ def extract_normalized_gauge(gray_roi):
         maxRadius=120,
     )
     if circles is None:
-        raise RuntimeError("Kein Thermometer-Kreis erkannt")
+        raise RuntimeError("No gauge circle detected")
     cx_r, cy_r, r = np.round(circles[0][0]).astype(int)
 
     pad = 5
@@ -245,24 +249,24 @@ def angle_to_temperature(angle: float) -> float:
 def annotate_and_save(frame, norm, angle, temperature, cx, cy, r, roi_coords, tip):
     y1, y2, x1, x2 = roi_coords
 
-    # Text-Overlay vorbereiten
-    ts = time.strftime("%d.%m.%Y %H:%M:%S")
+    # Prepare text overlay
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
     label = f"{temperature:.1f} C  |  {angle:.1f} deg  |  {ts}"
     (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
 
-    # ROI-Annotationen auf dem Original zeichnen
+    # Draw ROI annotations on original
     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
     cv2.circle(frame, (cx, cy), r, (0, 255, 0), 2)
     cv2.drawMarker(frame, (cx, cy), (0, 0, 255), cv2.MARKER_CROSS, 20, 2)
 
-    # Label Box zeichnen
+    # Draw label box
     cv2.rectangle(frame, (x1, y1 - th - 20), (x1 + tw + 10, y1), (0, 0, 0), -1)
     cv2.putText(
         frame, label, (x1 + 5, y1 - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2
     )
 
     # --- CROPPING FOR STORAGE EFFICIENCY ---
-    # Crop-Bereich definieren: ROI + Padding für das Label
+    # Define crop area: ROI + padding for label
     padding = 50
     crop_y1 = max(0, y1 - th - padding)
     crop_y2 = min(frame.shape[0], y2 + padding)
@@ -271,11 +275,11 @@ def annotate_and_save(frame, norm, angle, temperature, cx, cy, r, roi_coords, ti
 
     cropped_out = frame[crop_y1:crop_y2, crop_x1:crop_x2]
 
-    # Speichern des neuesten Bildes (gecropped)
+    # Save latest cropped image
     cv2.imwrite(os.path.join(SAVE_DIR, SAVE_LATEST), cropped_out)
     cv2.imwrite(os.path.join(SAVE_DIR, SAVE_NORM), norm)
 
-    # In die Historie speichern
+    # Save to history
     if SAVE_HISTORY:
         fname = time.strftime("%Y%m%d_%H%M%S") + f"_{temperature:.1f}C.jpg"
         cv2.imwrite(os.path.join(HISTORY_DIR, fname), cropped_out)
@@ -284,11 +288,11 @@ def annotate_and_save(frame, norm, angle, temperature, cx, cy, r, roi_coords, ti
 
 def publish_ha_discovery():
     config = {
-        "name": "Heizungsthermometer",
+        "name": "Analog Thermometer",
         "state_topic": MQTT_TOPIC,
         "unit_of_measurement": "°C",
         "device_class": "temperature",
-        "unique_id": "heizung_thermo_cam",
+        "unique_id": "analog_thermometer_reader",
         "icon": "mdi:thermometer",
     }
     mqtt_publish.single(
@@ -303,7 +307,7 @@ def publish_ha_discovery():
 
 def run():
     publish_ha_discovery()
-    print(f"Gestartet — Bilder: {SAVE_DIR}/  |  Intervall: {INTERVAL}s")
+    print(f"Started — Images: {SAVE_DIR}/  |  Interval: {INTERVAL}s")
     while True:
         try:
             frame = get_frame()
@@ -329,7 +333,7 @@ def run():
             )
 
         except Exception as e:
-            print(f"[{time.strftime('%H:%M:%S')}]  FEHLER: {e}")
+            print(f"[{time.strftime('%H:%M:%S')}]  ERROR: {e}")
 
         time.sleep(INTERVAL)
 
