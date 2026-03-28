@@ -118,12 +118,20 @@ def cleanup_history():
 
 
 def get_frame():
-    r = requests.get(SNAPSHOT_URL, timeout=10, verify=False)
-    r.raise_for_status()
+    try:
+        r = requests.get(SNAPSHOT_URL, timeout=10, verify=False)
+        r.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(f"HTTP request failed: {e}")
+
+    if len(r.content) < 100:
+        raise RuntimeError(f"Empty response ({len(r.content)} bytes)")
+
     data = np.frombuffer(r.content, dtype=np.uint8)
     frame = cv2.imdecode(data, cv2.IMREAD_COLOR)
     if frame is None:
-        raise RuntimeError("Failed to decode snapshot")
+        raise RuntimeError(f"Failed to decode snapshot (got {len(r.content)} bytes)")
+
     return frame
 
 
